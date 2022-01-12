@@ -17,10 +17,9 @@ def compileShader(code):
 
 #---------------------------------------------------------------------------------------------
 class NxNMatMulShader:
-	def __init__(self,n,gpuIdx=0,openLog=False):
-		if openLog == True:
-			self.kp_logger = logging.getLogger("kp")
-			self.kp_logger.setLevel(logging.INFO)
+	def __init__(self,n,gpuIdx=0,logLevel=logging.DEBUG):
+		self.kp_logger = logging.getLogger("kp")
+		self.kp_logger.setLevel(logLevel)
 		matmul_shader_code = """
 				#version 450
 				layout (local_size_x = 1, local_size_y = 1) in;
@@ -39,37 +38,43 @@ class NxNMatMulShader:
 					out_tensor[(globalCol * tensor_size) + globalRow] = acc;
 				}
 		"""
+
 		self.mgr = kp.Manager(gpuIdx)
 		self.matmul_shader_bytes = compileShader(matmul_shader_code)
 		self.tensor_size = n
 		self.tensor_shape = [n,n]
-		self.C = self.mgr.tensor(np.zeros(self.tensor_shape))
-	# A,B are nxn	
-	def matmul(self,A,B):
-		paras = [self.mgr.tensor(B),self.mgr.tensor(A),self.C] 
-		# define algo
+		
+		# define tensors 
+		self.kpA = self.mgr.tensor(np.zeros(self.tensor_shape))
+		self.kpB = self.mgr.tensor(np.zeros(self.tensor_shape))
+		self.kpC = self.mgr.tensor(np.zeros(self.tensor_shape))
+		
+		# define algorithm 
+		algoTensors = [self.kpB,self.kpA,self.kpC]
 		algo = self.mgr.algorithm(
-			paras,  # params
+			algoTensors,  # params
 			self.matmul_shader_bytes,  # spirv
 			(*self.tensor_shape, 1),  # workgroup
 			[float(self.tensor_size)],  # spec_consts
 			[]
 		)  # push_consts
-		# computing ...
-		(
-			self.mgr.sequence()
-		 	.record(kp.OpTensorSyncDevice(paras))
-		 	.record(kp.OpAlgoDispatch(algo))
-		 	.record(kp.OpTensorSyncLocal(paras))
-		 	.eval()
-		)
-		return self.C.data().reshape(self.tensor_shape)
+		self.algoPipline = self.mgr.sequence()
+
+		self.algoPipline.record(kp.OpTensorSyncDevice(algoTensors)) # map Tensor to GPU
+		self.algoPipline.record(kp.OpAlgoDispatch(algo))
+		self.algoPipline.record(kp.OpTensorSyncLocal([self.kpC])) # map GPU to Tensor
+	# A,B are nxn	
+	def matmul(self,A,B):
+		self.kpA.data()[:] = A.reshape(-1)
+		self.kpB.data()[:] = B.reshape(-1)
+		self.algoPipline.eval()
+		return self.kpC.data().reshape(self.tensor_shape)
 #------------------------------------------------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
 	import timeit
-	n = 4
-	shader = NxNMatMulShader(n,openLog=False)
+	n = 32
+	shader = NxNMatMulShader(n,logLevel=logging.INFO)
 	for i in range(5):
 		print("================================================")
 		print(f"[{i}]")
@@ -82,10 +87,10 @@ if __name__ == '__main__':
 		C2 = shader.matmul(A,B)
 		t3 = timeit.default_timer()
 		
-
-		print(f"pure_numpy:{C1},{(t2-t1)*1000} ms")
-		print(f"kp_shader:{C2},{(t3-t2)*1000}ms")
-
+		print(f"pure_numpy:{(t2-t1)*1000} ms")
+		print(C1)
+		print(f"kp_shader:{(t3-t2)*1000}ms")
+		print(C2)
 		
 
 

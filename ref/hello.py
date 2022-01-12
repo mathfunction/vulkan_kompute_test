@@ -37,7 +37,7 @@ def test_array_multiplication(gpuIdx,bytecode):
     print("=============================================")
     # 1. Create Kompute Manager (selects device 0 by default)
     mgr = kp.Manager(gpuIdx)
-
+    
     # 2. Create Kompute Tensors to hold data
     tensor_in_a = mgr.tensor(np.array([2, 2, 2,4]))
     tensor_in_b = mgr.tensor(np.array([1, 2, 3,5]))
