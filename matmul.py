@@ -75,14 +75,14 @@ class NxNMatMulShader:
 
 if __name__ == '__main__':
 	import timeit
-	n = 64
+	n = 32
 	shader = NxNMatMulShader(n,logLevel=logging.DEBUG)
-	for i in range(5):
+	for i in range(3):
 		print("================================================")
 		print(f"[{i}]")
 		print("================================================") 
-		A = np.array(np.random.randn(n,n))
-		B = np.array(np.random.randn(n,n))
+		A = np.array(np.random.randn(n,n)).astype(float)
+		B = np.array(np.random.randn(n,n)).astype(float)
 		t1 = timeit.default_timer()
 		C1 = A@B
 		t2 = timeit.default_timer()
