@@ -11,6 +11,7 @@ def compileShader(code):
 	os.system("glslangValidator -V tmp_kp_shader.comp -o tmp_kp_shader.comp.spv")
 	# 利用 glslangValidator 編譯 // 安裝在 vulkan SDK 裡面 !!
 	spirv_bytes = open("tmp_kp_shader.comp.spv", "rb").read()
+	# 刪掉 
 	os.remove("tmp_kp_shader.comp")
 	os.remove("tmp_kp_shader.comp.spv")
 	return spirv_bytes
@@ -68,15 +69,14 @@ class NxNMatMulShader:
 		# copy data 
 		self.kpA.data()[:] = A.reshape(-1)
 		self.kpB.data()[:] = B.reshape(-1)
-
 		self.algoPipline.eval()
 		return self.kpC.data().reshape(self.tensor_shape)
 #------------------------------------------------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
 	import timeit
-	n = 1024
-	shader = NxNMatMulShader(n,logLevel=logging.INFO)
+	n = 64
+	shader = NxNMatMulShader(n,logLevel=logging.DEBUG)
 	for i in range(5):
 		print("================================================")
 		print(f"[{i}]")
