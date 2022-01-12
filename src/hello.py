@@ -17,10 +17,10 @@ kp_logger.setLevel(logging.INFO)
 
 
 
-def test_array_multiplication():
-
+def test_array_multiplication(gpuIdx=0):
+    print("=============================================")
     # 1. Create Kompute Manager (selects device 0 by default)
-    mgr = kp.Manager(0)
+    mgr = kp.Manager(gpuIdx)
 
     # 2. Create Kompute Tensors to hold data
     tensor_in_a = mgr.tensor(np.array([2, 2, 2]))
@@ -49,4 +49,5 @@ def test_array_multiplication():
     print(np_array.shape)
 
 
-test_array_multiplication()
+test_array_multiplication(0)
+test_array_multiplication(1)
