@@ -65,15 +65,17 @@ class NxNMatMulShader:
 		self.algoPipline.record(kp.OpTensorSyncLocal([self.kpC])) # map GPU to Tensor
 	# A,B are nxn	
 	def matmul(self,A,B):
+		# copy data 
 		self.kpA.data()[:] = A.reshape(-1)
 		self.kpB.data()[:] = B.reshape(-1)
+
 		self.algoPipline.eval()
 		return self.kpC.data().reshape(self.tensor_shape)
 #------------------------------------------------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
 	import timeit
-	n = 32
+	n = 1024
 	shader = NxNMatMulShader(n,logLevel=logging.INFO)
 	for i in range(5):
 		print("================================================")
