@@ -52,11 +52,9 @@ def test_array_multiplication(gpuIdx,bytecode):
         .eval()
     )
 
-    np_array = tensor_out.data()
-    print(np_array)
-    print(np_array.shape)
+    return tensor_out.data()
 
-test_array_multiplication(0,byte_compute_mult)
-
+tensor_out = test_array_multiplication(0,byte_compute_mult)
+print(tensor_out)
 
 #========================================================================================
