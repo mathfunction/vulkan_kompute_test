@@ -1,7 +1,7 @@
 """============================================================================================
 compute shader 
 https://www.khronos.org/opengl/wiki/Compute_Shader#Overview
-
+https://www.ibiblio.org/e-notes/webgl/gpu/mul/sgemm.htm
 ============================================================================================="""
 import os
 import logging
@@ -20,7 +20,7 @@ def compileShader(code):
 	return spirv_bytes
 
 #---------------------------------------------------------------------------------------------
-class naiveGEMMShader:
+class naiveSGEMMShader:
 	def __init__(self,MKN,gpuIdx=0,logLevel=logging.NOTSET):
 		self.kp_logger = logging.getLogger("kp")
 		self.kp_logger.setLevel(logLevel)
@@ -101,7 +101,7 @@ if __name__ == '__main__':
 			M = 256
 			K = 64
 			N = 128
-			shader = naiveGEMMShader([M,K,N],gpuIdx=0,logLevel=logging.INFO)
+			shader = naiveSGEMMShader([M,K,N],gpuIdx=0,logLevel=logging.INFO)
 			shader.showDevice()
 			for i in range(3):
 				print("================================================")
