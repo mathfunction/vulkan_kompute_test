@@ -46,40 +46,61 @@ class SGEMMShader:
 					C[(m*N)+n] = AB_mn;
 				}//end_main
 		"""
-		tile_size = 32
-		_2dresigter_shader_code = '''
+		TS = 32
+		WPT = 8
+		RTS = 4
+		opt_shader_code = '''
 		#version 450
-		layout (local_size_x = {tile_size}, local_size_y = {tile_size}) in;
+		layout (local_size_x = {TS}, local_size_y = {RTS}) in;
 		layout (set = 0, binding = 0) readonly buffer buf_in_tensor_1 {{ float in_tensor_1[]; }};
 		layout (set = 0, binding = 1) readonly buffer buf_in_tensor_2 {{ float in_tensor_2[]; }};
 		layout (set = 0, binding = 2) writeonly buffer buf_out_tensor {{ float out_tensor[]; }};
-		layout (constant_id = 0) const float tensor_size_f = 0;
-		shared float sub_tensor_1[{tile_size}][{tile_size}];
-		shared float sub_tensor_2[{tile_size}][{tile_size}];
+		layout (constant_id = 0) const float Mf = 0;
+		layout (constant_id = 1) const float Kf = 0;
+		layout (constant_id = 2) const float Nf = 0;
+
+		shared float sub_tensor_1[{TS}][{TS}];
+		shared float sub_tensor_2[{TS}][{TS}];
 		void main(){{
-		    uint row = gl_LocalInvocationID.x; // 0 .. tile_size
-		    uint col = gl_LocalInvocationID.y; // 0 .. tile_size
-		    // gl_WorkGroupID : 0 .. tensor_size / tile_size
-		    uint globalRow = {tile_size} * gl_WorkGroupID.x + row;
-		    uint globalCol = {tile_size} * gl_WorkGroupID.y + col;
-		    uint tensor_size = uint(tensor_size_f);
-		    float acc = 0.0;
-		    uint numTiles = tensor_size / {tile_size};
+		    uint row = gl_LocalInvocationID.x; // 0 .. TS
+		    uint col = gl_LocalInvocationID.y; // 0 .. TS
+		    // gl_WorkGroupID : 0 .. tensor_size // TS
+		    uint globalRow = {TS} * gl_WorkGroupID.x + row;
+		    uint globalCol = {TS} * gl_WorkGroupID.y + col;
+		    uint M = uint(Mf);
+		    uint K = uint(Kf);
+		    uint N = uint(Nf);
+		    
+		    // Initialise the accumulation registers
+    		float acc[{WPT}];
+    		for (uint w=0u; w < {WPT}; w++) {{
+        		acc[w] = 0.0;
+    		}}//endfor
+		    //float acc = 0.0;
+		    uint numTiles = K / {TS};
 		    for(uint t = 0u; t < numTiles; t++){{
-		        uint tiledRow = ({tile_size} * t) + row;
-		        uint tiledCol = ({tile_size} * t) + col;
-		        sub_tensor_1[col][row] = in_tensor_1[(tiledCol * tensor_size) + globalRow];
-		        sub_tensor_2[col][row] = in_tensor_2[(globalCol * tensor_size) + tiledRow];
+		        for (uint w=0u; w < {WPT}; w++) {{
+			        uint tiledRow = ({TS} * t) + row;
+			        uint tiledCol = ({TS} * t) + col;
+			        sub_tensor_1[col+w*{RTS}][row] = in_tensor_1[(tiledCol+w*{RTS})*M + globalRow];
+			        sub_tensor_2[col+w*{RTS}][row] = in_tensor_2[(globalCol+w*{RTS})*K + tiledRow];
+			    }}//endfor
 		        memoryBarrierShared();
 		        barrier();
-		        for(uint k = 0u; k < {tile_size}; k++)
-		            acc += sub_tensor_1[k][row] * sub_tensor_2[col][k];
+		        for(uint k = 0u; k < {TS}; k++){{
+		        	for (uint w=0u; w < {WPT}; w++) {{
+		            	acc[w] += sub_tensor_1[k][row] * sub_tensor_2[col+w*{RTS}][k];
+		        	}}
+		        }}
 		        barrier();
 		    }}//endfor
-		    out_tensor[tensor_size * globalCol + globalRow] = acc;
+		    // Store the final result in C
+		    for(uint w=0u; w < {WPT}; w++) {{
+		    	out_tensor[M*(globalCol+w*{RTS}) + globalRow] = acc[w];
+		    }}//endfor
 		}}'''
 		self.mgr = kp.Manager(gpuIdx)
-		self.matmul_shader_bytes = compileShader(_2dresigter_shader_code.format(tile_size=tile_size))
+		self.matmul_shader_bytes = compileShader(opt_shader_code.format(TS=TS,WPT=WPT,RTS=RTS))
 		#self.matmul_shader_bytes = compileShader(naive_matmul_shader_code)
 		M,K,N = MKN
 		self.returnShape = [M,N]
@@ -92,7 +113,7 @@ class SGEMMShader:
 		algo = self.mgr.algorithm(
 			[self.kpA,self.kpB,self.kpC],  # params
 			self.matmul_shader_bytes,  # spirv
-			(M//tile_size,N//tile_size,1),  # workgroup
+			(M//TS,N//TS,1),  # workgroup
 			[float(M),float(K),float(N)],  # spec_consts
 			[]
 		)  # push_consts
