@@ -20,7 +20,7 @@ def compileShader(code):
 
 #---------------------------------------------------------------------------------------------
 class NxNMatMulShader:
-	def __init__(self,n,gpuIdx=0,logLevel=logging.DEBUG):
+	def __init__(self,n,gpuIdx=0,logLevel=logging.NOTSET):
 		self.kp_logger = logging.getLogger("kp")
 		self.kp_logger.setLevel(logLevel)
 		matmul_shader_code = """
@@ -65,12 +65,6 @@ class NxNMatMulShader:
 		self.algoPipline.record(kp.OpTensorSyncDevice(algoTensors)) # map Tensor to GPU
 		self.algoPipline.record(kp.OpAlgoDispatch(algo))
 		self.algoPipline.record(kp.OpTensorSyncLocal([self.kpC])) # map GPU to Tensor
-	def clear(self):
-		#self.algoPipline.destroy()
-		#self.kpA.destroy()
-		#self.kpB.destroy()
-		#self.kpC.destroy()
-		self.mgr.destroy()
 
 	# A,B are nxn	
 	def matmul(self,A,B):
@@ -79,28 +73,19 @@ class NxNMatMulShader:
 		self.kpB.data()[:] = B.reshape(-1)
 		self.algoPipline.eval()
 		return self.kpC.data().reshape(self.tensor_shape)
-#------------------------------------------------------------------------------------------------------------------------------
-
-class TestManager:
-	def __init__(self,mgr):
-		self.mgr = mgr
 
 
-def build_mgr():
-	mgr = kp.Manager()
-	return mgr
-
-if __name__ == '__main__':
+def GPU_Algorithm():
+	"""=================================================================================================================================================
+	issue : libc++abi: terminating with uncaught exception of type pybind11::error_already_set: TypeError: 'NoneType' object is not callable ,
+	實測: 最外層需要有一個  def 函式包裝 !!
+	=================================================================================================================================================="""
 	import timeit
 	import traceback
 	try:
-		mgr = build_mgr()
-		print("123")
-		test = TestManager(mgr)
-		"""
 		n = 32
-		shader = NxNMatMulShader(n,gpuIdx=0,logLevel=logging.DEBUG)
-		for i in range(1):
+		shader = NxNMatMulShader(n,gpuIdx=0,logLevel=logging.INFO)
+		for i in range(3):
 			print("================================================")
 			print(f"[{i}]")
 			print("================================================") 
@@ -109,19 +94,20 @@ if __name__ == '__main__':
 			t1 = timeit.default_timer()
 			C1 = A@B
 			t2 = timeit.default_timer()
-			#C2 = shader.matmul(A,B)
+			C2 = shader.matmul(A,B)
 			t3 = timeit.default_timer()
 			
 			print(f"pure_numpy:{(t2-t1)*1000} ms")
 			print(C1)
 			print(f"kp_shader:{(t3-t2)*1000}ms")
-			#print(C2)
-		shader.clear()
-		"""
+			print(C2)
 	except Exception as e:
 		print(e)
 		print(traceback.format_exc())
 
+
+if __name__ == '__main__':
+	GPU_Algorithm()
 
 
 
