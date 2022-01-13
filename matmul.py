@@ -3,6 +3,8 @@ compute shader
 https://www.khronos.org/opengl/wiki/Compute_Shader#Overview
 https://www.ibiblio.org/e-notes/webgl/gpu/mul/sgemm.htm
 https://cnugteren.github.io/tutorial/pages/page1.html
+https://antongerdelan.net/opengl/compute.html
+https://stackoverflow.com/questions/3957125/questions-about-global-and-local-work-size
 ============================================================================================="""
 import os
 import logging
@@ -218,7 +220,6 @@ class SGEMMShader:
 			[self.kpA,self.kpB,self.kpC],  # params
 			self.matmul_shader_bytes,  # spirv
 			(M//TS,N//TS,1),  # workgroup
-			#(M//8,N//8,1), 
 			[float(M),float(K),float(N)],  # spec_consts
 			[]
 		)  # push_consts
@@ -258,11 +259,11 @@ if __name__ == '__main__':
 		import traceback
 		try:
 			M = 1024
-			K = 2048
-			N = 512
-			shader = SGEMMShader([M,K,N],gpuIdx=0,logLevel=logging.DEBUG)
+			K = 1024
+			N = 1024
+			shader = SGEMMShader([M,K,N],gpuIdx=0,logLevel=logging.INFO)
 			shader.showDevice()
-			for i in range(3):
+			for i in range(2):
 				print("================================================")
 				print(f"[{i}]")
 				print("================================================") 
@@ -274,8 +275,8 @@ if __name__ == '__main__':
 				C2 = shader.matmul(A,B)
 				t3 = timeit.default_timer()
 				if i == 0:
-					print(f"pure_cpu_numpy:{C1}")
-					print(f"kp_gpu_shader:{C2}")
+					print(f"pure_cpu_numpy:{C1[-2:-1,-100:-1]}")
+					print(f"kp_gpu_shader:{C2[-2:-1,-100:-1]}")
 				else:
 					print(f"pure_cpu_numpy:{(t2-t1)*1000} ms")
 					print(f"kp_gpu_shader:{(t3-t2)*1000}ms")
