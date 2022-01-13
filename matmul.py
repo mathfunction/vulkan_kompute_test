@@ -2,6 +2,7 @@
 compute shader 
 https://www.khronos.org/opengl/wiki/Compute_Shader#Overview
 https://www.ibiblio.org/e-notes/webgl/gpu/mul/sgemm.htm
+https://cnugteren.github.io/tutorial/pages/page1.html
 ============================================================================================="""
 import os
 import logging
@@ -20,11 +21,11 @@ def compileShader(code):
 	return spirv_bytes
 
 #---------------------------------------------------------------------------------------------
-class naiveSGEMMShader:
+class SGEMMShader:
 	def __init__(self,MKN,gpuIdx=0,logLevel=logging.NOTSET):
 		self.kp_logger = logging.getLogger("kp")
 		self.kp_logger.setLevel(logLevel)
-		matmul_shader_code = """
+		naive_matmul_shader_code = """
 				#version 450
 				layout (local_size_x = 1, local_size_y = 1) in;
 				layout (set = 0, binding = 0) readonly buffer buf_in_tensor_1 { float A[]; };
@@ -39,27 +40,59 @@ class naiveSGEMMShader:
 					uint M = uint(Mf);
 					uint K = uint(Kf);
 					uint N = uint(Nf);
-					float AB_mn = 0.0;
+					float AB_mn = 0.0f;
 					for(uint k = 0u; k < K; k++)
-						AB_mn += A[(m*K)+k]*B[(k*N)+n]; // parallel with (M,N,1)
+						AB_mn += A[k*M+m]*B[n*K+k]; // parallel with (M,N,1)
 					C[(m*N)+n] = AB_mn;
 				}//end_main
 		"""
-
+		tile_size = 32
+		_2dresigter_shader_code = '''
+		#version 450
+		layout (local_size_x = {tile_size}, local_size_y = {tile_size}) in;
+		layout (set = 0, binding = 0) readonly buffer buf_in_tensor_1 {{ float in_tensor_1[]; }};
+		layout (set = 0, binding = 1) readonly buffer buf_in_tensor_2 {{ float in_tensor_2[]; }};
+		layout (set = 0, binding = 2) writeonly buffer buf_out_tensor {{ float out_tensor[]; }};
+		layout (constant_id = 0) const float tensor_size_f = 0;
+		shared float sub_tensor_1[{tile_size}][{tile_size}];
+		shared float sub_tensor_2[{tile_size}][{tile_size}];
+		void main(){{
+		    uint row = gl_LocalInvocationID.x; // 0 .. tile_size
+		    uint col = gl_LocalInvocationID.y; // 0 .. tile_size
+		    // gl_WorkGroupID : 0 .. tensor_size / tile_size
+		    uint globalRow = {tile_size} * gl_WorkGroupID.x + row;
+		    uint globalCol = {tile_size} * gl_WorkGroupID.y + col;
+		    uint tensor_size = uint(tensor_size_f);
+		    float acc = 0.0;
+		    uint numTiles = tensor_size / {tile_size};
+		    for(uint t = 0u; t < numTiles; t++){{
+		        uint tiledRow = ({tile_size} * t) + row;
+		        uint tiledCol = ({tile_size} * t) + col;
+		        sub_tensor_1[col][row] = in_tensor_1[(tiledCol * tensor_size) + globalRow];
+		        sub_tensor_2[col][row] = in_tensor_2[(globalCol * tensor_size) + tiledRow];
+		        memoryBarrierShared();
+		        barrier();
+		        for(uint k = 0u; k < {tile_size}; k++)
+		            acc += sub_tensor_1[k][row] * sub_tensor_2[col][k];
+		        barrier();
+		    }}//endfor
+		    out_tensor[tensor_size * globalCol + globalRow] = acc;
+		}}'''
 		self.mgr = kp.Manager(gpuIdx)
-		self.matmul_shader_bytes = compileShader(matmul_shader_code)
+		self.matmul_shader_bytes = compileShader(_2dresigter_shader_code.format(tile_size=tile_size))
+		#self.matmul_shader_bytes = compileShader(naive_matmul_shader_code)
 		M,K,N = MKN
 		self.returnShape = [M,N]
 		# define tensors 
-		self.kpA = self.mgr.tensor(np.zeros([M,K]))
-		self.kpB = self.mgr.tensor(np.zeros([K,N]))
+		self.kpA = self.mgr.tensor(np.zeros([K,M]))
+		self.kpB = self.mgr.tensor(np.zeros([N,K]))
 		self.kpC = self.mgr.tensor(np.zeros([M,N]))
 		
 		# define algorithm 
 		algo = self.mgr.algorithm(
 			[self.kpA,self.kpB,self.kpC],  # params
 			self.matmul_shader_bytes,  # spirv
-			(M,N,1),  # workgroup
+			(M//tile_size,N//tile_size,1),  # workgroup
 			[float(M),float(K),float(N)],  # spec_consts
 			[]
 		)  # push_consts
@@ -98,26 +131,28 @@ if __name__ == '__main__':
 		import timeit
 		import traceback
 		try:
-			M = 256
-			K = 64
-			N = 128
-			shader = naiveSGEMMShader([M,K,N],gpuIdx=0,logLevel=logging.INFO)
+			M = 1024
+			K = 1024
+			N = 1024
+			shader = SGEMMShader([M,K,N],gpuIdx=0,logLevel=logging.INFO)
 			shader.showDevice()
 			for i in range(3):
 				print("================================================")
 				print(f"[{i}]")
 				print("================================================") 
-				A = np.array(np.random.randn(M,K)).astype(float)
-				B = np.array(np.random.randn(K,N)).astype(float)
+				A = np.array(np.random.randn(K,M)).astype(float)
+				B = np.array(np.random.randn(N,K)).astype(float)
 				t1 = timeit.default_timer()
-				C1 = A@B
+				C1 = B@A
 				t2 = timeit.default_timer()
 				C2 = shader.matmul(A,B)
 				t3 = timeit.default_timer()
-				print(f"pure_numpy:{(t2-t1)*1000} ms")
-				print(C1)
-				print(f"kp_shader:{(t3-t2)*1000}ms")
-				print(C2)
+				if i == 0:
+					print(f"pure_cpu_numpy:{C1}")
+					print(f"kp_gpu_shader:{C2}")
+				else:
+					print(f"pure_cpu_numpy:{(t2-t1)*1000} ms")
+					print(f"kp_gpu_shader:{(t3-t2)*1000}ms")
 		except Exception as e:
 			print(e)
 			print(traceback.format_exc())
