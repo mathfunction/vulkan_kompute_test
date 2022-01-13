@@ -46,6 +46,8 @@ class SGEMMShader:
 					C[(m*N)+n] = AB_mn;
 				}//end_main
 		"""
+
+		
 		TS = 32
 		WPT = 8
 		RTS = 4
