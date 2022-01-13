@@ -6,6 +6,8 @@ import os
 import logging
 import numpy as np
 import kp # vulkan-kompute (vulkanSDK , cmake in terminal)
+
+
 def compileShader(code):
 	open("tmp_kp_shader.comp", "w").write(code)
 	os.system("glslangValidator -V tmp_kp_shader.comp -o tmp_kp_shader.comp.spv")
@@ -60,10 +62,16 @@ class NxNMatMulShader:
 			[]
 		)  # push_consts
 		self.algoPipline = self.mgr.sequence()
-
 		self.algoPipline.record(kp.OpTensorSyncDevice(algoTensors)) # map Tensor to GPU
 		self.algoPipline.record(kp.OpAlgoDispatch(algo))
 		self.algoPipline.record(kp.OpTensorSyncLocal([self.kpC])) # map GPU to Tensor
+	def clear(self):
+		#self.algoPipline.destroy()
+		#self.kpA.destroy()
+		#self.kpB.destroy()
+		#self.kpC.destroy()
+		self.mgr.destroy()
+
 	# A,B are nxn	
 	def matmul(self,A,B):
 		# copy data 
@@ -73,27 +81,47 @@ class NxNMatMulShader:
 		return self.kpC.data().reshape(self.tensor_shape)
 #------------------------------------------------------------------------------------------------------------------------------
 
+class TestManager:
+	def __init__(self,mgr):
+		self.mgr = mgr
+
+
+def build_mgr():
+	mgr = kp.Manager()
+	return mgr
+
 if __name__ == '__main__':
 	import timeit
-	n = 32
-	shader = NxNMatMulShader(n,logLevel=logging.DEBUG)
-	for i in range(3):
-		print("================================================")
-		print(f"[{i}]")
-		print("================================================") 
-		A = np.array(np.random.randn(n,n)).astype(float)
-		B = np.array(np.random.randn(n,n)).astype(float)
-		t1 = timeit.default_timer()
-		C1 = A@B
-		t2 = timeit.default_timer()
-		C2 = shader.matmul(A,B)
-		t3 = timeit.default_timer()
-		
-		print(f"pure_numpy:{(t2-t1)*1000} ms")
-		print(C1)
-		print(f"kp_shader:{(t3-t2)*1000}ms")
-		print(C2)
-		
+	import traceback
+	try:
+		mgr = build_mgr()
+		print("123")
+		test = TestManager(mgr)
+		"""
+		n = 32
+		shader = NxNMatMulShader(n,gpuIdx=0,logLevel=logging.DEBUG)
+		for i in range(1):
+			print("================================================")
+			print(f"[{i}]")
+			print("================================================") 
+			A = np.array(np.random.randn(n,n)).astype(float)
+			B = np.array(np.random.randn(n,n)).astype(float)
+			t1 = timeit.default_timer()
+			C1 = A@B
+			t2 = timeit.default_timer()
+			#C2 = shader.matmul(A,B)
+			t3 = timeit.default_timer()
+			
+			print(f"pure_numpy:{(t2-t1)*1000} ms")
+			print(C1)
+			print(f"kp_shader:{(t3-t2)*1000}ms")
+			#print(C2)
+		shader.clear()
+		"""
+	except Exception as e:
+		print(e)
+		print(traceback.format_exc())
+
 
 
 
